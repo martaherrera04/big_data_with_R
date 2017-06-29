@@ -195,6 +195,9 @@ data <- dbGetQuery(sc, ex5)
 
 ## Whisker, magrittr
 
+Whisker ens permet posar el valor de variables dins un string.
+Si var=list(nom="Marta"), whisker.render("Hola {{nom}}",var) retorna "Hola Marta"
+
 ```{r}
 library(whisker)
 library(magrittr)
@@ -224,7 +227,7 @@ data <- list(productId = 24852)
 
 product_times_ordered_txt %>%
   whisker.render(data) %>%
-  cat
+  cat #veiem que agafa el valor 24852
 ```
 
 
@@ -240,11 +243,27 @@ product_times_ordered_txt %>%
 ## Questions
 
 * For given department, plot the most popular product (with templating department).
+```{r}
+dbGetQuery(sc, 
+"SELECT *
+FROM products_tbl
+limit 20") 
+```
+
 * For given day, rank department popularity.
 
 ## More on orders (Window Functions)
 
+Per exemple si tenim aquesta taula i volem saber per al total d'estudiants de cada departament, quants corresponen a cada any -> **window function**
 
+```{r}
+data <- data.frame(department=c(1,1,1,2,2), year=c(2010,2011,2012,2010,2011), n_student=c(20,21,25,13,18))
+data_to_spark <- copy_to(sc, data, "data_s", overwrite = TRUE) #passem dades a spark
+
+dbGetQuery(sc, 
+"SELECT department, n_student/sum(n_student) OVER(partition by department) as 
+FROM data_s") 
+```
 
 ```{r}
 dbGetQuery(sc, 
@@ -264,13 +283,96 @@ FROM orders_tbl
 WHERE user_id <= 10
 ")
 ```
+
+Per a casa usuari (agafem només usuaris fins al 10), agafem la primera ordre que va fer i la guardem a la columna first_order.
+
 ```{r}
 dbGetQuery(sc, 
-"SELECT user_id
-,   order_id
-,   FIRST_VALUE(order_id)  OVER(partition by user_id ORDER BY order_number) AS first_order
+"SELECT user_id, order_id, FIRST_VALUE(order_id) OVER(partition by user_id ORDER BY order_number) AS first_order
 FROM orders_tbl
 WHERE user_id <= 10 
 ")
+```
+
+Perquè surti només una línia per usuari:
+
+```{r}
+dbGetQuery(sc, 
+"SELECT distinct user_id, FIRST_VALUE(order_id) OVER(partition by user_id ORDER BY order_number) AS first_order
+FROM orders_tbl
+WHERE user_id <= 10 
+ORDER BY user_id
+")
+```
+
+Ara volem buscar el producte més comú en les cistelles grans:
+
+* Product that is usually orders in numerous baskets
+
+```{r}
+"
+SELECT product_id
+,   AVG(products_number) AS avg_products_number
+FROM (
+    SELECT order_id
+    ,   product_id
+    ,   COUNT(product_id)  OVER(partition by order_id) AS products_number
+    FROM order_products__train_tbl
+) pn
+GROUP BY product_id
+ORDER BY avg_products_number DESC
+LIMIT 100
+" %>%
+dbGetQuery(sc, .)
+```
+
+* Could modify the query and add prduct name?
+
+```{r}
+"
+SELECT pn.product_id, product_name
+,   AVG(products_number) AS avg_products_number
+FROM (
+    SELECT order_id
+    ,   product_id
+    ,   COUNT(product_id)  OVER(partition by order_id) AS products_number
+    FROM order_products__train_tbl
+) pn LEFT JOIN PRODUCTS_TBL t2 on pn.product_id=t2.product_id
+GROUP BY pn.product_id, product_name
+ORDER BY avg_products_number DESC
+LIMIT 20
+" %>%
+dbGetQuery(sc, .)
+```
+
+* Product that is usually orders in small baskets
+
+```{r}
+"
+SELECT pn.product_id, product_name
+,   AVG(products_number) AS avg_products_number
+FROM (
+    SELECT order_id
+    ,   product_id
+    ,   COUNT(product_id)  OVER(partition by order_id) AS products_number
+    FROM order_products__train_tbl
+) pn LEFT JOIN PRODUCTS_TBL t2 on pn.product_id=t2.product_id
+GROUP BY pn.product_id, product_name
+ORDER BY avg_products_number
+LIMIT 20
+" %>%
+dbGetQuery(sc, .)
+```
+
+* For 5 first users and all their orders find days since first order.
+
+```{r}
+"
+SELECT order_id,user_id,order_number,days_since_prior_order, sum(days_since_prior_order) over (partition by user_id order by order_number, user_id rows unbounded preceding) as dies_dsd_1
+FROM orders_tbl
+WHERE user_id<=5
+ORDER BY user_id, order_number
+" %>%
+dbGetQuery(sc, .)
 ```
 
