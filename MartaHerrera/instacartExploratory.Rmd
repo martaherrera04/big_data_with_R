@@ -283,7 +283,7 @@ data <- data.frame(department=c(1,1,1,2,2), year=c(2010,2011,2012,2010,2011), n_
 data_to_spark <- copy_to(sc, data, "data_s", overwrite = TRUE) #passem dades a spark
 
 dbGetQuery(sc, 
-"SELECT department, n_student/sum(n_student) OVER(partition by department) as 
+"SELECT department, n_student/sum(n_student) OVER(partition by department) as prob
 FROM data_s") 
 ```
 
