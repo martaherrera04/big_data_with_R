@@ -16,6 +16,7 @@ order_products__train <- NULL
 orders <- NULL
 products <- NULL
 
+#Assignarem amb <<- perquè així es guarden al environment i no només dins la funció
 readInstacart <- function() {
   order_products__prior <<- 
     spark_read_csv(sc, "order_products__prior_tbl", 

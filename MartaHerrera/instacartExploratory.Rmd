@@ -33,7 +33,6 @@ dbGetQuery(sc, "SELECT * FROM order_products__prior_tbl LIMIT 10")
 
 This file tells to which set (prior, train, test) an order belongs. 
 
-
 ```{r}
 orders_prev <- dbGetQuery(sc, "SELECT * FROM orders_tbl LIMIT 100")
 orders_prev
@@ -185,10 +184,33 @@ dbGetQuery(sc, ex4)
 * Plot histogram of number of products in an order.
 
 ```{r}
-ex5 <- "select order_id, count(*)
+ex5 <- "select order_id, count(*) as n_products
         from order_products__prior_tbl
         group by order_id"
-data <- dbGetQuery(sc, ex5) 
+data <- dbGetQuery(sc, ex5) #si ho fem així, tenim 3 milions de files a representar
+
+#Comptarem quantes ordres tenen un nombre X de productes
+"select n_products, count(order_id) as n_orders
+from (select order_id, count(*) as n_products
+      from order_products__prior_tbl
+      group by order_id) op
+group by n_products" %>%
+  dbGetQuery(sc,.) %>%
+  ggplot(aes(n_products, n_orders)) +
+  geom_bar(stat='identity', fill='darkorange') +
+  theme_minimal()
+
+#Si volem treure outliers
+"select n_products, count(order_id) as n_orders
+from (select order_id, count(*) as n_products
+      from order_products__prior_tbl
+      group by order_id) op
+group by n_products" %>%
+  dbGetQuery(sc,.) %>%
+  filter(n_products<=50) %>%
+  ggplot(aes(n_products, n_orders)) +
+  geom_col(fill='darkorange') +
+  theme_minimal()
 ```
 
 * What is the most popular department? 
@@ -368,11 +390,23 @@ dbGetQuery(sc, .)
 
 ```{r}
 "
-SELECT order_id,user_id,order_number,days_since_prior_order, sum(days_since_prior_order) over (partition by user_id order by order_number, user_id rows unbounded preceding) as dies_dsd_1
+SELECT order_id, user_id, order_number, days_since_prior_order,
+  sum(days_since_prior_order) over (partition by user_id order by order_number, user_id rows unbounded preceding) as dies_dsd_1
 FROM orders_tbl
 WHERE user_id<=5
 ORDER BY user_id, order_number
 " %>%
 dbGetQuery(sc, .)
+```
+
+Si ho volem amb dplyr:
+
+```{r}
+orders %>%
+  filter(user_id <= 5) %>%
+  select(user_id, order_number, days_since_prior_order) %>%
+  arrange(user_id, order_number) %>%
+  mutate(days_since_first_order = cumsum(days_since_prior_order)) %>%
+  mutate(days_since_first_order=ifelse(is.null(days_since_prior_order), 0, days_since_first_order))
 ```
 
